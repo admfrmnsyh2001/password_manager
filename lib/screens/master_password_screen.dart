@@ -17,6 +17,8 @@ class _MasterPasswordScreenState extends State<MasterPasswordScreen> {
 
   bool _isInitialized = false;
   bool _hasMasterPassword = false;
+  bool _canUseBiometrics = false;
+  bool _biometricEnabled = false;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   String? _errorMessage;
@@ -30,11 +32,32 @@ class _MasterPasswordScreenState extends State<MasterPasswordScreen> {
 
   Future<void> _checkStatus() async {
     final hasPassword = await AuthService.instance.hasMasterPassword();
+    bool canUseBio = false;
+    bool bioEnabled = false;
+
+    if (hasPassword) {
+      canUseBio = await AuthService.instance.canAuthenticateWithBiometrics();
+      bioEnabled = await AuthService.instance.isBiometricEnabled();
+    }
+
     if (mounted) {
       setState(() {
         _hasMasterPassword = hasPassword;
+        _canUseBiometrics = canUseBio;
+        _biometricEnabled = bioEnabled;
         _isInitialized = true;
       });
+
+      if (hasPassword && canUseBio && bioEnabled) {
+        _handleBiometricAuth();
+      }
+    }
+  }
+
+  Future<void> _handleBiometricAuth() async {
+    final success = await AuthService.instance.authenticateWithBiometrics();
+    if (success && mounted) {
+      _navigateToHome();
     }
   }
 
@@ -294,34 +317,60 @@ class _MasterPasswordScreenState extends State<MasterPasswordScreen> {
                     ],
 
                     // Submit Button
-                    ElevatedButton(
-                      onPressed: _isLoading ? null : _handleSubmit,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF8B5CF6),
-                        foregroundColor: Colors.white,
-                        shadowColor: const Color(0x4D8B5CF6),
-                        elevation: 5,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: _isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            )
-                          : Text(
-                              _hasMasterPassword ? 'Masuk' : 'Buat Password',
-                              style: GoogleFonts.inter(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : _handleSubmit,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF8B5CF6),
+                              foregroundColor: Colors.white,
+                              shadowColor: const Color(0x4D8B5CF6),
+                              elevation: 5,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
                               ),
                             ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    ),
+                                  )
+                                : Text(
+                                    _hasMasterPassword ? 'Masuk' : 'Buat Password',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                        if (_hasMasterPassword && _canUseBiometrics && _biometricEnabled) ...[
+                          const SizedBox(width: 16),
+                          InkWell(
+                            onTap: _isLoading ? null : _handleBiometricAuth,
+                            borderRadius: BorderRadius.circular(16),
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E1E24),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: const Color(0x0DFFFFFF)),
+                              ),
+                              child: const Icon(
+                                Icons.fingerprint_rounded,
+                                color: Color(0xFF8B5CF6),
+                                size: 28,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 24),
                     
