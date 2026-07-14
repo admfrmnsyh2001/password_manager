@@ -21,8 +21,9 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
+      onUpgrade: _upgradeDB,
       onConfigure: _onConfigure,
     );
   }
@@ -35,9 +36,11 @@ class DatabaseService {
     await db.execute('''
       CREATE TABLE folders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_id INTEGER,
         name TEXT NOT NULL,
         icon TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (parent_id) REFERENCES folders (id) ON DELETE CASCADE
       )
     ''');
 
@@ -53,6 +56,16 @@ class DatabaseService {
         FOREIGN KEY (folder_id) REFERENCES folders (id) ON DELETE CASCADE
       )
     ''');
+  }
+
+  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      try {
+        await db.execute('ALTER TABLE folders ADD COLUMN parent_id INTEGER');
+      } catch (_) {
+        // Column might already exist
+      }
+    }
   }
 
   // --- Folder CRUD ---
@@ -76,10 +89,29 @@ class DatabaseService {
     return null;
   }
 
-  Future<List<Folder>> getFolders() async {
+  Future<List<Folder>> getFolders({int? parentId, bool loadAll = false}) async {
     final db = await instance.database;
-    final result = await db.query('folders', orderBy: 'name ASC');
-    return result.map((json) => Folder.fromMap(json)).toList();
+    if (loadAll) {
+      final result = await db.query('folders', orderBy: 'name ASC');
+      return result.map((json) => Folder.fromMap(json)).toList();
+    }
+
+    if (parentId == null) {
+      final result = await db.query(
+        'folders',
+        where: 'parent_id IS NULL',
+        orderBy: 'name ASC',
+      );
+      return result.map((json) => Folder.fromMap(json)).toList();
+    } else {
+      final result = await db.query(
+        'folders',
+        where: 'parent_id = ?',
+        whereArgs: [parentId],
+        orderBy: 'name ASC',
+      );
+      return result.map((json) => Folder.fromMap(json)).toList();
+    }
   }
 
   Future<int> updateFolder(Folder folder) async {
@@ -94,6 +126,13 @@ class DatabaseService {
 
   Future<int> deleteFolder(int id) async {
     final db = await instance.database;
+    // Recursively delete subfolders
+    final subfolders = await getFolders(parentId: id);
+    for (var sub in subfolders) {
+      if (sub.id != null) {
+        await deleteFolder(sub.id!);
+      }
+    }
     return await db.delete(
       'folders',
       where: 'id = ?',
